@@ -57,3 +57,7 @@ Tests use Vitest. Run `npm test` for single run, `npm run test:watch` for develo
 npm test -- tests/soundcloud.test.ts    # Run specific test file
 npm test -- -t "validates"              # Run tests matching pattern
 ```
+
+## Workflow
+
+Commit after every meaningful change with a descriptive message. No attribution footer needed.
