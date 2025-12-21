@@ -6,6 +6,10 @@
 import type { AppConfig, Track } from "./types/index.js";
 import { soundcloud } from "./services/soundcloud.js";
 import { downloadTrack } from "./services/downloader.js";
+import { runConcurrent } from "./utils/concurrent.js";
+
+// How many tracks to download at once
+const CONCURRENCY = 4;
 
 export async function runCli(url: string, config: AppConfig): Promise<void> {
   console.log("🎵 SoundCloud Downloader (CLI mode)\n");
@@ -19,33 +23,31 @@ export async function runCli(url: string, config: AppConfig): Promise<void> {
   const title = "tracks" in result ? result.title : `${result.artist} - ${result.title}`;
 
   console.log(`Found: ${title}`);
-  console.log(`Tracks: ${tracks.length}\n`);
+  console.log(`Tracks: ${tracks.length}`);
+  console.log(`Parallel downloads: ${CONCURRENCY}\n`);
 
-  // Step 3: Download each track
+  // Step 3: Download tracks in parallel
   let completed = 0;
   let failed = 0;
+  const total = tracks.length;
 
-  for (const track of tracks) {
-    const prefix = `[${completed + failed + 1}/${tracks.length}]`;
-    process.stdout.write(`${prefix} ${track.artist} - ${track.title}... `);
+  await runConcurrent(
+    tracks,
+    async (track, _index) => {
+      const name = `${track.artist} - ${track.title}`;
 
-    try {
-      await downloadTrack(track, config, {
-        onProgress: (percent) => {
-          process.stdout.write(`\r${prefix} ${track.artist} - ${track.title}... ${percent}%`);
-        },
-        onConverting: () => {
-          process.stdout.write(`\r${prefix} ${track.artist} - ${track.title}... converting`);
-        },
-      });
-      console.log(`\r${prefix} ${track.artist} - ${track.title}... ✓`);
-      completed++;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Unknown error";
-      console.log(`\r${prefix} ${track.artist} - ${track.title}... ✗ ${msg}`);
-      failed++;
-    }
-  }
+      try {
+        await downloadTrack(track, config);
+        completed++;
+        console.log(`✓ [${completed + failed}/${total}] ${name}`);
+      } catch (error) {
+        failed++;
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        console.log(`✗ [${completed + failed}/${total}] ${name} - ${msg}`);
+      }
+    },
+    CONCURRENCY
+  );
 
   // Step 4: Summary
   console.log("");

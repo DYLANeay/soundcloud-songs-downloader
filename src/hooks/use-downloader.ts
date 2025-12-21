@@ -2,6 +2,10 @@ import { useState, useCallback } from "react";
 import type { Track, DownloadProgress, AppConfig } from "../types/index.js";
 import { soundcloud } from "../services/soundcloud.js";
 import { downloadTrack } from "../services/downloader.js";
+import { runConcurrent } from "../utils/concurrent.js";
+
+// How many tracks to download at once
+const CONCURRENCY = 4;
 
 // All possible states the downloader can be in
 export type DownloaderState =
@@ -103,15 +107,16 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
       }
       setProgress(initialProgress);
 
-      // Step 4: Download tracks sequentially
-      // (we'll add parallel downloads later)
+      // Step 4: Download tracks in parallel
       setState("downloading");
 
-      for (const track of trackList) {
-        await downloadSingleTrack(track);
-      }
+      await runConcurrent(
+        trackList,
+        async (track) => downloadSingleTrack(track),
+        CONCURRENCY
+      );
 
-      // Step 5: Check if all succeeded
+      // Step 5: All done
       setState("complete");
 
     } catch (err) {
