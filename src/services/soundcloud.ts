@@ -154,14 +154,17 @@ export class SoundCloudService {
       (t) => t.format.protocol === "progressive"
     ) ?? media?.transcodings?.[0];
 
+    // User info might be missing in playlist track listings
+    const user = data.user as { username: string } | undefined;
+
     return {
       id: data.id as number,
-      title: data.title as string,
-      artist: (data.user as { username: string }).username,
-      duration: data.duration as number,
+      title: (data.title as string) ?? "Unknown Title",
+      artist: user?.username ?? "Unknown Artist",
+      duration: (data.duration as number) ?? 0,
       artworkUrl: (data.artwork_url as string | null) ?? null,
       streamUrl: transcoding?.url ?? null,
-      permalink: data.permalink_url as string,
+      permalink: (data.permalink_url as string) ?? "",
     };
   }
 
