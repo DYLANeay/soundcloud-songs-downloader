@@ -60,4 +60,11 @@ npm test -- -t "validates"              # Run tests matching pattern
 
 ## Workflow
 
+**PRIMARY GOAL: Explain everything.** When implementing features:
+1. Explain what you're about to implement and why
+2. Explain how it works technically (algorithms, patterns, architecture decisions)
+3. Explain trade-offs and alternatives considered
+4. Show the code with inline comments for complex logic
+5. Explain how pieces fit together in the larger system
+
 Commit after every meaningful change with a descriptive message. No attribution footer needed.
