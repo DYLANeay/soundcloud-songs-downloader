@@ -10,7 +10,7 @@ program
   .description("Download SoundCloud songs to MP3")
   .version("0.1.0")
   .argument("[url]", "SoundCloud track or playlist URL")
-  .option("-o, --output <dir>", "Output directory", "./downloads")
+  .option("-o, --output <dir>", "Output directory", "/home/dylan/Documents/songs")
   .option("-q, --quality <bitrate>", "Audio quality (128/192/256/320)", "320")
   .option("--no-tui", "Disable TUI, use simple output")
   .parse();
