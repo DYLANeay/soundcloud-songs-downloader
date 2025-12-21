@@ -2,6 +2,8 @@
 import { render } from "ink";
 import { program } from "commander";
 import { App } from "./app.js";
+import { runCli } from "./cli.js";
+import type { AppConfig } from "./types/index.js";
 
 program
   .name("scdown")
@@ -16,4 +18,31 @@ program
 const options = program.opts();
 const [url] = program.args;
 
-render(<App url={url} outputDir={options.output} quality={options.quality} />);
+// Build config
+const config: AppConfig = {
+  outputDir: options.output,
+  format: "mp3",
+  quality: options.quality as "128" | "192" | "256" | "320",
+};
+
+// Decide which mode to use:
+// 1. --no-tui flag explicitly set
+// 2. No TTY available (piped, CI, etc.)
+// 3. URL provided (can run non-interactively)
+const useCli = !options.tui || !process.stdin.isTTY;
+
+if (useCli && url) {
+  // CLI mode: simple console output
+  runCli(url, config).catch((error) => {
+    console.error("Error:", error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+} else if (useCli && !url) {
+  // No TTY and no URL - can't do anything
+  console.error("Error: URL required when running without a terminal");
+  console.error("Usage: scdown <soundcloud-url>");
+  process.exit(1);
+} else {
+  // TUI mode: interactive Ink interface
+  render(<App url={url} outputDir={options.output} quality={options.quality} />);
+}
