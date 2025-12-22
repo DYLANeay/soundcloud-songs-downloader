@@ -28,7 +28,7 @@ export class SoundCloudService {
         return this.parseTrack(response);
 
       case "playlist":
-        return this.parsePlaylist(response);
+        return await this.parsePlaylist(response);
 
       case "user":
         // User profile → fetch their tracks
@@ -170,17 +170,68 @@ export class SoundCloudService {
 
   // ─────────────────────────────────────────────────────────────
   // Parse raw API response into Playlist type
+  // SoundCloud only returns full track data for first ~5 tracks.
+  // The rest only have IDs - we need to fetch them separately.
   // ─────────────────────────────────────────────────────────────
-  private parsePlaylist(data: Record<string, unknown>): Playlist {
-    const tracks = (data.tracks as Array<Record<string, unknown>>).map((t) =>
-      this.parseTrack(t)
-    );
+  private async parsePlaylist(data: Record<string, unknown>): Promise<Playlist> {
+    const rawTracks = data.tracks as Array<Record<string, unknown>>;
+
+    // Separate complete tracks (have title) from incomplete ones (only have id)
+    const completeTracks: Track[] = [];
+    const incompleteTrackIds: number[] = [];
+
+    for (const t of rawTracks) {
+      // A track is incomplete if it lacks a title or media transcodings
+      const hasTitle = typeof t.title === "string" && t.title.length > 0;
+      const hasMedia = t.media && (t.media as { transcodings?: unknown[] }).transcodings?.length;
+
+      if (hasTitle && hasMedia) {
+        completeTracks.push(this.parseTrack(t));
+      } else if (t.id) {
+        incompleteTrackIds.push(t.id as number);
+      }
+    }
+
+    // Fetch full data for incomplete tracks in batches of 50
+    if (incompleteTrackIds.length > 0) {
+      const fetchedTracks = await this.fetchTracksByIds(incompleteTrackIds);
+      completeTracks.push(...fetchedTracks);
+    }
 
     return {
       id: data.id as number,
       title: data.title as string,
-      tracks,
+      tracks: completeTracks,
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Fetch full track data by IDs (batch endpoint, max 50 per request)
+  // ─────────────────────────────────────────────────────────────
+  private async fetchTracksByIds(trackIds: number[]): Promise<Track[]> {
+    const clientId = await this.getClientId();
+    const tracks: Track[] = [];
+    const batchSize = 50;
+
+    // Process in batches of 50 (SoundCloud API limit)
+    for (let i = 0; i < trackIds.length; i += batchSize) {
+      const batchIds = trackIds.slice(i, i + batchSize);
+      const idsParam = batchIds.join(",");
+
+      const endpoint = `https://api-v2.soundcloud.com/tracks?ids=${idsParam}&client_id=${clientId}`;
+
+      try {
+        const response = await got(endpoint).json<Array<Record<string, unknown>>>();
+
+        for (const trackData of response) {
+          tracks.push(this.parseTrack(trackData));
+        }
+      } catch {
+        // Silently continue - some tracks may be unavailable/region-locked
+      }
+    }
+
+    return tracks;
   }
 }
 
