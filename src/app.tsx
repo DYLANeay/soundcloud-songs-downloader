@@ -26,7 +26,7 @@ export function App({ url: initialUrl, outputDir, quality }: AppProps) {
   // ─────────────────────────────────────────────────────────────
   // Use our downloader hook - this manages all download state
   // ─────────────────────────────────────────────────────────────
-  const { tracks, progress, error, state, startDownload } = useDownloader(config);
+  const { tracks, progress, error, state, outputDir: effectiveOutputDir, startDownload } = useDownloader(config);
 
   // ─────────────────────────────────────────────────────────────
   // If URL was passed via CLI args, start downloading immediately
@@ -78,7 +78,7 @@ export function App({ url: initialUrl, outputDir, quality }: AppProps) {
           <DownloadList tracks={tracks} progress={progress} />
           <Box marginTop={1}>
             <Text color="green">
-              ✓ All downloads complete! Saved to {outputDir}
+              ✓ All downloads complete! Saved to {effectiveOutputDir}
             </Text>
           </Box>
         </Box>

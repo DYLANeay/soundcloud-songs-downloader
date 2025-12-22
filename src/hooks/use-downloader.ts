@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import { join } from "node:path";
 import type { Track, DownloadProgress, AppConfig } from "../types/index.js";
 import { soundcloud } from "../services/soundcloud.js";
 import { downloadTrack } from "../services/downloader.js";
@@ -20,7 +21,17 @@ export interface UseDownloaderResult {
   progress: Map<number, DownloadProgress>;
   error: string | null;
   state: DownloaderState;
+  outputDir: string;
   startDownload: (url: string) => Promise<void>;
+}
+
+// Sanitize playlist name for use as folder name
+function sanitizeFolderName(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
 }
 
 export function useDownloader(config: AppConfig): UseDownloaderResult {
@@ -31,6 +42,9 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [progress, setProgress] = useState<Map<number, DownloadProgress>>(new Map());
   const [error, setError] = useState<string | null>(null);
+
+  // Effective output directory (may include playlist subfolder)
+  const effectiveOutputDir = useRef<string>(config.outputDir);
 
   // ─────────────────────────────────────────────────────────────
   // Helper: Update progress for a single track
@@ -54,8 +68,14 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
   const downloadSingleTrack = useCallback(async (track: Track): Promise<void> => {
     updateProgress(track.id, { status: "downloading", percent: 0 });
 
+    // Use effective output dir (includes playlist subfolder if applicable)
+    const downloadConfig: AppConfig = {
+      ...config,
+      outputDir: effectiveOutputDir.current,
+    };
+
     try {
-      await downloadTrack(track, config, {
+      await downloadTrack(track, downloadConfig, {
         onProgress: (percent) => {
           updateProgress(track.id, { percent });
         },
@@ -88,11 +108,19 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
       // Step 1: Resolve the URL to get track(s)
       const result = await soundcloud.resolveUrl(url);
 
-      // Step 2: Normalize to array of tracks
-      // (single track vs playlist)
-      const trackList: Track[] = "tracks" in result
-        ? result.tracks   // It's a playlist
-        : [result];       // It's a single track
+      // Step 2: Normalize to array of tracks and set output directory
+      // Playlists get their own subfolder, single tracks go directly to outputDir
+      let trackList: Track[];
+      if ("tracks" in result) {
+        // It's a playlist - create subfolder with playlist name
+        trackList = result.tracks;
+        const folderName = sanitizeFolderName(result.title);
+        effectiveOutputDir.current = join(config.outputDir, folderName);
+      } else {
+        // Single track - use base output directory
+        trackList = [result];
+        effectiveOutputDir.current = config.outputDir;
+      }
 
       setTracks(trackList);
 
@@ -131,6 +159,7 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
     progress,
     error,
     state,
+    outputDir: effectiveOutputDir.current,
     startDownload,
   };
 }
