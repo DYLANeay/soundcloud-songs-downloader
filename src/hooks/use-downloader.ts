@@ -13,6 +13,7 @@ const CONCURRENCY = 4;
 export type DownloaderState =
   | "idle"        // Waiting for user input
   | "resolving"   // Fetching track/playlist info from SoundCloud
+  | "naming"      // Waiting for user to choose a folder name
   | "downloading" // Actively downloading tracks
   | "complete"    // All downloads finished
   | "error";      // Something went wrong
@@ -23,7 +24,9 @@ export interface UseDownloaderResult {
   error: string | null;
   state: DownloaderState;
   outputDir: string;
+  suggestedName: string;
   startDownload: (url: string) => Promise<void>;
+  confirmDownload: (folderName: string) => Promise<void>;
 }
 
 // Sanitize playlist name for use as folder name
@@ -43,9 +46,13 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [progress, setProgress] = useState<Map<number, DownloadProgress>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [suggestedName, setSuggestedName] = useState("");
 
   // Effective output directory (may include playlist subfolder)
   const effectiveOutputDir = useRef<string>(config.outputDir);
+
+  // Holds resolved tracks between the "naming" and "downloading" phases
+  const resolvedTracks = useRef<Track[]>([]);
 
   // ─────────────────────────────────────────────────────────────
   // Helper: Update progress for a single track
@@ -97,7 +104,7 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
   }, [config, updateProgress]);
 
   // ─────────────────────────────────────────────────────────────
-  // Main function: Start the download process
+  // Phase 1: Resolve URL and pause for folder name input
   // ─────────────────────────────────────────────────────────────
   const startDownload = useCallback(async (url: string): Promise<void> => {
     // Reset state
@@ -109,21 +116,44 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
       // Step 1: Resolve the URL to get track(s)
       const result = await soundcloud.resolveUrl(url);
 
-      // Step 2: Normalize to array of tracks and set output directory
-      // Playlists get their own subfolder, single tracks go directly to outputDir
+      // Step 2: Normalize to array of tracks, compute suggested folder name
       let allTracks: Track[];
+      let defaultName: string;
+
       if ("tracks" in result) {
-        // It's a playlist - create subfolder with playlist name
         allTracks = result.tracks;
-        const folderName = sanitizeFolderName(result.title);
-        effectiveOutputDir.current = join(config.outputDir, folderName);
+        defaultName = sanitizeFolderName(result.title);
       } else {
-        // Single track - use base output directory
         allTracks = [result];
-        effectiveOutputDir.current = config.outputDir;
+        defaultName = sanitizeFolderName(`${result.artist} - ${result.title}`);
       }
 
-      // Step 3: Filter out already-downloaded tracks if skipDuplicates is enabled
+      // Store resolved data for phase 2
+      resolvedTracks.current = allTracks;
+      setTracks(allTracks);
+      setSuggestedName(defaultName);
+
+      // Pause here — user picks the folder name next
+      setState("naming");
+
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setError(message);
+      setState("error");
+    }
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────
+  // Phase 2: User confirmed folder name, start downloading
+  // ─────────────────────────────────────────────────────────────
+  const confirmDownload = useCallback(async (folderName: string): Promise<void> => {
+    try {
+      const allTracks = resolvedTracks.current;
+
+      // Set output directory to the user-chosen subfolder
+      effectiveOutputDir.current = join(config.outputDir, folderName);
+
+      // Filter duplicates against the chosen directory
       let tracksToDownload = allTracks;
       let skippedTracks: Track[] = [];
 
@@ -137,13 +167,9 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
         skippedTracks = filtered.skipped;
       }
 
-      // Show all tracks (including skipped ones)
-      setTracks(allTracks);
-
-      // Step 4: Initialize progress for all tracks
+      // Initialize progress for all tracks
       const initialProgress = new Map<number, DownloadProgress>();
 
-      // Mark skipped tracks
       for (const track of skippedTracks) {
         initialProgress.set(track.id, {
           trackId: track.id,
@@ -152,7 +178,6 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
         });
       }
 
-      // Mark tracks to download as pending
       for (const track of tracksToDownload) {
         initialProgress.set(track.id, {
           trackId: track.id,
@@ -168,7 +193,7 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
         return;
       }
 
-      // Step 5: Download tracks in parallel
+      // Download tracks in parallel
       setState("downloading");
 
       await runConcurrent(
@@ -177,7 +202,6 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
         CONCURRENCY
       );
 
-      // Step 6: All done
       setState("complete");
 
     } catch (err) {
@@ -193,6 +217,8 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
     error,
     state,
     outputDir: effectiveOutputDir.current,
+    suggestedName,
     startDownload,
+    confirmDownload,
   };
 }
