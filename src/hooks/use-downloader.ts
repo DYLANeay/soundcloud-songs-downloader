@@ -4,6 +4,7 @@ import type { Track, DownloadProgress, AppConfig } from "../types/index.js";
 import { soundcloud } from "../services/soundcloud.js";
 import { downloadTrack } from "../services/downloader.js";
 import { runConcurrent } from "../utils/concurrent.js";
+import { filterExistingTracks } from "../utils/duplicates.js";
 
 // How many tracks to download at once
 const CONCURRENCY = 4;
@@ -110,23 +111,49 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
 
       // Step 2: Normalize to array of tracks and set output directory
       // Playlists get their own subfolder, single tracks go directly to outputDir
-      let trackList: Track[];
+      let allTracks: Track[];
       if ("tracks" in result) {
         // It's a playlist - create subfolder with playlist name
-        trackList = result.tracks;
+        allTracks = result.tracks;
         const folderName = sanitizeFolderName(result.title);
         effectiveOutputDir.current = join(config.outputDir, folderName);
       } else {
         // Single track - use base output directory
-        trackList = [result];
+        allTracks = [result];
         effectiveOutputDir.current = config.outputDir;
       }
 
-      setTracks(trackList);
+      // Step 3: Filter out already-downloaded tracks if skipDuplicates is enabled
+      let tracksToDownload = allTracks;
+      let skippedTracks: Track[] = [];
 
-      // Step 3: Initialize progress for all tracks
+      if (config.skipDuplicates) {
+        const filtered = await filterExistingTracks(
+          allTracks,
+          effectiveOutputDir.current,
+          config.format
+        );
+        tracksToDownload = filtered.toDownload;
+        skippedTracks = filtered.skipped;
+      }
+
+      // Show all tracks (including skipped ones)
+      setTracks(allTracks);
+
+      // Step 4: Initialize progress for all tracks
       const initialProgress = new Map<number, DownloadProgress>();
-      for (const track of trackList) {
+
+      // Mark skipped tracks
+      for (const track of skippedTracks) {
+        initialProgress.set(track.id, {
+          trackId: track.id,
+          percent: 100,
+          status: "skipped",
+        });
+      }
+
+      // Mark tracks to download as pending
+      for (const track of tracksToDownload) {
         initialProgress.set(track.id, {
           trackId: track.id,
           percent: 0,
@@ -135,16 +162,22 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
       }
       setProgress(initialProgress);
 
-      // Step 4: Download tracks in parallel
+      // If all tracks are skipped, go straight to complete
+      if (tracksToDownload.length === 0) {
+        setState("complete");
+        return;
+      }
+
+      // Step 5: Download tracks in parallel
       setState("downloading");
 
       await runConcurrent(
-        trackList,
+        tracksToDownload,
         async (track) => downloadSingleTrack(track),
         CONCURRENCY
       );
 
-      // Step 5: All done
+      // Step 6: All done
       setState("complete");
 
     } catch (err) {
@@ -152,7 +185,7 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
       setError(message);
       setState("error");
     }
-  }, [downloadSingleTrack]);
+  }, [config.skipDuplicates, config.format, config.outputDir, downloadSingleTrack]);
 
   return {
     tracks,
