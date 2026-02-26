@@ -97,7 +97,7 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
           updateProgress(track.id, { status: "error", error: err.message });
         },
       });
-    } catch (err) {
+    } catch {
       // Error already handled by onError callback
       // But we need to catch to prevent unhandled rejection
     }
