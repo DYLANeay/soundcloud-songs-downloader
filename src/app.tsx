@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Box, Text, useApp } from "ink";
 import { UrlInput } from "./components/url-input.js";
+import { FolderInput } from "./components/folder-input.js";
 import { DownloadList } from "./components/download-list.js";
 import { useDownloader } from "./hooks/use-downloader.js";
 import type { AppConfig } from "./types/index.js";
@@ -28,7 +29,12 @@ export function App({ url: initialUrl, outputDir, quality, skipDuplicates }: App
   // ─────────────────────────────────────────────────────────────
   // Use our downloader hook - this manages all download state
   // ─────────────────────────────────────────────────────────────
-  const { tracks, progress, error, state, outputDir: effectiveOutputDir, startDownload } = useDownloader(config);
+  const {
+    tracks, progress, error, state,
+    outputDir: effectiveOutputDir,
+    suggestedName,
+    startDownload, confirmDownload,
+  } = useDownloader(config);
 
   // ─────────────────────────────────────────────────────────────
   // If URL was passed via CLI args, start downloading immediately
@@ -57,7 +63,7 @@ export function App({ url: initialUrl, outputDir, quality, skipDuplicates }: App
       {/* Header */}
       <Box marginBottom={1}>
         <Text bold color="cyan">
-          🎵 SoundCloud Downloader
+          SoundCloud Downloader
         </Text>
       </Box>
 
@@ -67,6 +73,22 @@ export function App({ url: initialUrl, outputDir, quality, skipDuplicates }: App
       {/* State: Resolving URL to get track info */}
       {state === "resolving" && (
         <Text color="yellow">Fetching track info...</Text>
+      )}
+
+      {/* State: Choose folder name for downloads */}
+      {state === "naming" && (
+        <Box flexDirection="column">
+          <Text color="green">
+            Found {tracks.length} {tracks.length === 1 ? "track" : "tracks"}
+          </Text>
+          <Box marginTop={1}>
+            <FolderInput
+              defaultValue={suggestedName}
+              outputDir={outputDir}
+              onSubmit={confirmDownload}
+            />
+          </Box>
+        </Box>
       )}
 
       {/* State: Downloading tracks */}
