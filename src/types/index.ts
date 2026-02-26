@@ -23,7 +23,7 @@ export type Playlist = z.infer<typeof PlaylistSchema>;
 export interface DownloadProgress {
   trackId: number;
   percent: number;
-  status: "pending" | "downloading" | "converting" | "complete" | "error";
+  status: "pending" | "downloading" | "converting" | "complete" | "error" | "skipped";
   error?: string;
 }
 
@@ -31,4 +31,5 @@ export interface AppConfig {
   outputDir: string;
   format: "mp3" | "wav" | "flac";
   quality: "128" | "192" | "256" | "320";
+  skipDuplicates?: boolean;
 }
