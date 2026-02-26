@@ -57,33 +57,35 @@ npm start
 ```
 
 ```
- 🎵 SoundCloud Downloader
+ SoundCloud Downloader
 
  Enter SoundCloud URL: https://soundcloud.com/artist/track
 ```
 
-Paste a URL and press Enter. The TUI shows real-time download progress for each track:
+Paste a URL and press Enter. For playlists, you'll be prompted to choose a folder name before downloading begins.
+
+During download, the TUI shows a compact rolling view — a progress summary, active downloads, and the last few completed tracks:
 
 ```
- 🎵 SoundCloud Downloader
+ SoundCloud Downloader
 
- ↓ Artist - Track One (42%)
- ⟳ Artist - Track Two
- ○ Artist - Track Three
- ✓ Artist - Track Four
- ⊘ Artist - Track Five (already downloaded)
+ ⠋ Downloading: 5/20 complete
+   ✓ Artist - Track Four
+   ✓ Artist - Track Five
+   ↓ Artist - Track Six (42%)
+   ↓ Artist - Track Seven (18%)
+   ⟳ Artist - Track Eight
 ```
 
 | Symbol | Meaning |
 |--------|---------|
-| `○` | Pending |
 | `↓` | Downloading (with %) |
 | `⟳` | Converting to MP3 |
 | `✓` | Complete |
 | `✗` | Error |
 | `⊘` | Skipped (already exists) |
 
-On error, the URL prompt reappears so you can try again. On completion, the app exits automatically after showing the save location.
+On completion, a summary is shown (`✓ 18 downloaded, 2 failed — Saved to /path`) and the app exits automatically. On error, the URL prompt reappears so you can try again.
 
 ### Options
 
