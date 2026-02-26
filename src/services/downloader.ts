@@ -2,10 +2,9 @@ import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { join } from "node:path";
-import got from "got";
 import ffmpeg from "fluent-ffmpeg";
 import type { Track, AppConfig } from "../types/index.js";
-import { soundcloud } from "./soundcloud.js";
+import { soundcloud, httpClient } from "./soundcloud.js";
 
 export interface DownloadCallbacks {
   onProgress?: (percent: number) => void;
@@ -30,7 +29,7 @@ export async function downloadTrack(
     const outputPath = join(config.outputDir, `${sanitizedTitle}.${config.format}`);
 
     // Download the stream
-    const downloadStream = got.stream(streamUrl);
+    const downloadStream = httpClient.stream(streamUrl);
     const fileStream = createWriteStream(tempPath);
 
     downloadStream.on("downloadProgress", ({ transferred, total }) => {

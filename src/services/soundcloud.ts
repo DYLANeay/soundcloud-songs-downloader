@@ -1,7 +1,29 @@
 import got from "got";
 import type { Track, Playlist } from "../types/index.js";
 
-const CLIENT_ID_REGEX = /client_id=([a-zA-Z0-9]+)/;
+// Configured HTTP client with browser headers.
+// SoundCloud blocks requests that don't look like browser traffic,
+// so we set User-Agent, Accept, and Accept-Language to match Chrome.
+export const httpClient = got.extend({
+  headers: {
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+  },
+});
+
+// Multiple patterns to find client IDs in JS bundles.
+// SoundCloud embeds client IDs differently across bundle versions:
+//   - Modern: client_id:"abc123..."  (colon-separated, inside object literals)
+//   - Variant: ,client_id:"abc123..." (comma-prefixed property)
+//   - Legacy:  client_id=abc123...    (query-param style in URLs)
+// All SoundCloud client IDs are exactly 32 alphanumeric characters.
+const CLIENT_ID_PATTERNS = [
+  /client_id\s*:\s*"([0-9a-zA-Z]{32})"/,
+  /,client_id:"([0-9a-zA-Z]{32})"/,
+  /client_id=([a-zA-Z0-9]{32})/,
+];
 
 export class SoundCloudService {
   private clientId: string | null = null;
@@ -17,10 +39,9 @@ export class SoundCloudService {
     const cleanUrl = this.cleanUrl(expandedUrl);
 
     // Step 3: Resolve via SoundCloud API
-    const clientId = await this.getClientId();
-    const resolveEndpoint = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(cleanUrl)}&client_id=${clientId}`;
-
-    const response = await got(resolveEndpoint).json<Record<string, unknown>>();
+    const response = await this.apiRequest<Record<string, unknown>>(
+      `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(cleanUrl)}`
+    );
 
     // Step 4: Handle different content types
     switch (response.kind) {
@@ -43,16 +64,11 @@ export class SoundCloudService {
   // Get the actual audio stream URL for a track
   // ─────────────────────────────────────────────────────────────
   async getStreamUrl(track: Track): Promise<string> {
-    const clientId = await this.getClientId();
-
     if (!track.streamUrl) {
       throw new Error(`Track "${track.title}" has no stream URL (might be region-locked or premium)`);
     }
 
-    const response = await got(
-      `${track.streamUrl}?client_id=${clientId}`
-    ).json<{ url: string }>();
-
+    const response = await this.apiRequest<{ url: string }>(track.streamUrl);
     return response.url;
   }
 
@@ -63,7 +79,7 @@ export class SoundCloudService {
     // on.soundcloud.com URLs redirect to the full URL
     if (url.includes("on.soundcloud.com")) {
       // HEAD request to follow redirects without downloading content
-      const response = await got.head(url, { followRedirect: true });
+      const response = await httpClient.head(url, { followRedirect: true });
       return response.url;
     }
     return url;
@@ -90,13 +106,13 @@ export class SoundCloudService {
   // Fetch tracks from a user's profile
   // ─────────────────────────────────────────────────────────────
   private async fetchUserTracks(userData: Record<string, unknown>): Promise<Playlist> {
-    const clientId = await this.getClientId();
     const userId = userData.id as number;
     const username = userData.username as string;
 
     // Fetch user's tracks (limit to 50 most recent)
-    const tracksEndpoint = `https://api-v2.soundcloud.com/users/${userId}/tracks?client_id=${clientId}&limit=50`;
-    const response = await got(tracksEndpoint).json<{ collection: Array<Record<string, unknown>> }>();
+    const response = await this.apiRequest<{ collection: Array<Record<string, unknown>> }>(
+      `https://api-v2.soundcloud.com/users/${userId}/tracks?limit=50`
+    );
 
     const tracks = response.collection.map((t) => this.parseTrack(t));
 
@@ -121,26 +137,73 @@ export class SoundCloudService {
     }
 
     // Fetch SoundCloud homepage
-    const html = await got("https://soundcloud.com").text();
+    const html = await httpClient("https://soundcloud.com").text();
 
-    // Find JavaScript bundle URLs
-    const scripts = html.match(/src="(https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g) ?? [];
+    // Find JavaScript bundle URLs — match any script from sndcdn.com/assets/
+    // (covers a-v2.sndcdn.com, a-v3.sndcdn.com, etc.)
+    const scripts =
+      html.match(/<script[^>]+src="(https?:\/\/[^"]*sndcdn\.com\/assets\/[^"]+\.js)"/g) ?? [];
 
-    // Search last 5 scripts for client_id
-    for (const scriptMatch of scripts.slice(-5)) {
-      const scriptUrl = scriptMatch.match(/src="([^"]+)"/)?.[1];
+    // Search all matching scripts in reverse order (client ID is usually in later bundles).
+    // Stop as soon as we find a valid one.
+    for (const scriptTag of [...scripts].reverse()) {
+      const scriptUrl = scriptTag.match(/src="([^"]+)"/)?.[1];
       if (!scriptUrl) continue;
 
-      const scriptContent = await got(scriptUrl).text();
-      const clientIdMatch = scriptContent.match(CLIENT_ID_REGEX);
+      const scriptContent = await httpClient(scriptUrl).text();
 
-      if (clientIdMatch?.[1]) {
-        this.clientId = clientIdMatch[1];
-        return this.clientId;
+      // Try each regex pattern against the bundle content
+      for (const pattern of CLIENT_ID_PATTERNS) {
+        const match = scriptContent.match(pattern);
+        if (match?.[1]) {
+          this.clientId = match[1];
+          return this.clientId;
+        }
       }
     }
 
     throw new Error("Could not find SoundCloud client ID - SoundCloud may have changed their site");
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Clear cached client ID (used on auth failure to force re-extraction)
+  // ─────────────────────────────────────────────────────────────
+  private clearClientId(): void {
+    this.clientId = null;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Centralized API request with auto client_id and 401/403 retry
+  // Appends client_id as a query param, and on auth failure:
+  //   1. Clears the cached client ID
+  //   2. Re-extracts from SoundCloud's bundles
+  //   3. Retries the request once
+  // ─────────────────────────────────────────────────────────────
+  private async apiRequest<T>(url: string): Promise<T> {
+    const makeUrl = (clientId: string) => {
+      const separator = url.includes("?") ? "&" : "?";
+      return `${url}${separator}client_id=${clientId}`;
+    };
+
+    const clientId = await this.getClientId();
+
+    try {
+      return await httpClient(makeUrl(clientId)).json<T>();
+    } catch (error: unknown) {
+      const status =
+        error instanceof Object && "response" in error
+          ? (error as { response: { statusCode: number } }).response?.statusCode
+          : undefined;
+
+      // On 401/403, the client ID may have been revoked — retry with a fresh one
+      if (status === 401 || status === 403) {
+        this.clearClientId();
+        const freshId = await this.getClientId();
+        return await httpClient(makeUrl(freshId)).json<T>();
+      }
+
+      throw error;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -209,7 +272,6 @@ export class SoundCloudService {
   // Fetch full track data by IDs (batch endpoint, max 50 per request)
   // ─────────────────────────────────────────────────────────────
   private async fetchTracksByIds(trackIds: number[]): Promise<Track[]> {
-    const clientId = await this.getClientId();
     const tracks: Track[] = [];
     const batchSize = 50;
 
@@ -218,10 +280,10 @@ export class SoundCloudService {
       const batchIds = trackIds.slice(i, i + batchSize);
       const idsParam = batchIds.join(",");
 
-      const endpoint = `https://api-v2.soundcloud.com/tracks?ids=${idsParam}&client_id=${clientId}`;
-
       try {
-        const response = await got(endpoint).json<Array<Record<string, unknown>>>();
+        const response = await this.apiRequest<Array<Record<string, unknown>>>(
+          `https://api-v2.soundcloud.com/tracks?ids=${idsParam}`
+        );
 
         for (const trackData of response) {
           tracks.push(this.parseTrack(trackData));
