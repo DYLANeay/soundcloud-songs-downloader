@@ -26,7 +26,7 @@ export interface UseDownloaderResult {
   outputDir: string;
   suggestedName: string;
   startDownload: (url: string) => Promise<void>;
-  confirmDownload: (folderName: string) => Promise<void>;
+  confirmDownload: (outputPath: string) => Promise<void>;
 }
 
 // Sanitize playlist name for use as folder name
@@ -122,10 +122,10 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
 
       if ("tracks" in result) {
         allTracks = result.tracks;
-        defaultName = sanitizeFolderName(result.title);
+        defaultName = join(config.outputDir, sanitizeFolderName(result.title));
       } else {
         allTracks = [result];
-        defaultName = sanitizeFolderName(`${result.artist} - ${result.title}`);
+        defaultName = join(config.outputDir, sanitizeFolderName(`${result.artist} - ${result.title}`));
       }
 
       // Store resolved data for phase 2
@@ -141,17 +141,17 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
       setError(message);
       setState("error");
     }
-  }, []);
+  }, [config.outputDir]);
 
   // ─────────────────────────────────────────────────────────────
   // Phase 2: User confirmed folder name, start downloading
   // ─────────────────────────────────────────────────────────────
-  const confirmDownload = useCallback(async (folderName: string): Promise<void> => {
+  const confirmDownload = useCallback(async (outputPath: string): Promise<void> => {
     try {
       const allTracks = resolvedTracks.current;
 
-      // Set output directory to the user-chosen subfolder
-      effectiveOutputDir.current = join(config.outputDir, folderName);
+      // Use the full path provided by the user
+      effectiveOutputDir.current = outputPath;
 
       // Filter duplicates against the chosen directory
       let tracksToDownload = allTracks;
@@ -209,7 +209,7 @@ export function useDownloader(config: AppConfig): UseDownloaderResult {
       setError(message);
       setState("error");
     }
-  }, [config.skipDuplicates, config.format, config.outputDir, downloadSingleTrack]);
+  }, [config.skipDuplicates, config.format, downloadSingleTrack]);
 
   return {
     tracks,

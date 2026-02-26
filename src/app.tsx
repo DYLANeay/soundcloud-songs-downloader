@@ -84,7 +84,6 @@ export function App({ url: initialUrl, outputDir, quality, skipDuplicates }: App
           <Box marginTop={1}>
             <FolderInput
               defaultValue={suggestedName}
-              outputDir={outputDir}
               onSubmit={confirmDownload}
             />
           </Box>
