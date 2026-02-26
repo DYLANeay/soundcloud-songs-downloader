@@ -7,6 +7,8 @@ interface DownloadListProps {
   progress: Map<number, DownloadProgress>;
 }
 
+const MAX_RECENT = 3;
+
 export function DownloadList({ tracks, progress }: DownloadListProps) {
   if (tracks.length === 0) {
     return (
@@ -19,14 +21,56 @@ export function DownloadList({ tracks, progress }: DownloadListProps) {
     );
   }
 
+  // Partition tracks by status
+  const active: { track: Track; progress?: DownloadProgress }[] = [];
+  const finished: { track: Track; progress?: DownloadProgress }[] = [];
+  const pending: { track: Track; progress?: DownloadProgress }[] = [];
+
+  for (const track of tracks) {
+    const p = progress.get(track.id);
+    const status = p?.status ?? "pending";
+
+    if (status === "downloading" || status === "converting") {
+      active.push({ track, progress: p });
+    } else if (status === "complete" || status === "error" || status === "skipped") {
+      finished.push({ track, progress: p });
+    } else {
+      pending.push({ track, progress: p });
+    }
+  }
+
+  // Show only the most recent completions (tail of the finished list,
+  // since tracks finish roughly in order they started)
+  const recentFinished = finished.slice(-MAX_RECENT);
+
+  // Build summary counts
+  const complete = finished.filter(f => f.progress?.status === "complete").length;
+  const failed = finished.filter(f => f.progress?.status === "error").length;
+  const skipped = finished.filter(f => f.progress?.status === "skipped").length;
+
+  const parts = [`${complete + failed + skipped}/${tracks.length} complete`];
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (skipped > 0) parts.push(`${skipped} skipped`);
+
   return (
     <Box flexDirection="column">
-      {tracks.map((track) => {
-        const trackProgress = progress.get(track.id);
-        return (
-          <TrackRow key={track.id} track={track} progress={trackProgress} />
-        );
-      })}
+      {/* Summary counter — always visible */}
+      <Box>
+        <Text color="yellow">
+          <Spinner type="dots" />
+        </Text>
+        <Text> Downloading: {parts.join(", ")}</Text>
+      </Box>
+
+      {/* Recent completions — feedback that work is finishing */}
+      {recentFinished.map(({ track, progress: p }) => (
+        <TrackRow key={track.id} track={track} progress={p} />
+      ))}
+
+      {/* Active downloads — the rows that are actually changing */}
+      {active.map(({ track, progress: p }) => (
+        <TrackRow key={track.id} track={track} progress={p} />
+      ))}
     </Box>
   );
 }
@@ -61,7 +105,7 @@ function TrackRow({ track, progress }: TrackRowProps) {
 
   return (
     <Box>
-      <Text color={statusColor}>{statusIcon} </Text>
+      <Text color={statusColor}>  {statusIcon} </Text>
       <Text>
         {track.artist} - {track.title}
       </Text>
