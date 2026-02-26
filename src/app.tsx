@@ -95,7 +95,7 @@ export function App({ url: initialUrl, outputDir, quality, skipDuplicates }: App
         <DownloadList tracks={tracks} progress={progress} />
       )}
 
-      {/* State: All done */}
+      {/* State: All done — summary only, no full track list re-render */}
       {state === "complete" && (() => {
         const statuses = Array.from(progress.values());
         const downloaded = statuses.filter(p => p.status === "complete").length;
@@ -107,14 +107,9 @@ export function App({ url: initialUrl, outputDir, quality, skipDuplicates }: App
         if (skipped > 0) parts.push(`${skipped} skipped`);
 
         return (
-          <Box flexDirection="column">
-            <DownloadList tracks={tracks} progress={progress} />
-            <Box marginTop={1}>
-              <Text color="green">
-                ✓ {parts.join(", ")} — Saved to {effectiveOutputDir}
-              </Text>
-            </Box>
-          </Box>
+          <Text color="green">
+            ✓ {parts.join(", ")} — Saved to {effectiveOutputDir}
+          </Text>
         );
       })()}
 
