@@ -46,6 +46,7 @@ function TrackRow({ track, progress }: TrackRowProps) {
     converting: "⟳",
     complete: "✓",
     error: "✗",
+    skipped: "⊘",
   }[status];
 
   const colorMap = {
@@ -54,6 +55,7 @@ function TrackRow({ track, progress }: TrackRowProps) {
     converting: "yellow",
     complete: "green",
     error: "red",
+    skipped: "cyan",
   } as const;
   const statusColor = colorMap[status];
 
@@ -65,6 +67,9 @@ function TrackRow({ track, progress }: TrackRowProps) {
       </Text>
       {status === "downloading" && (
         <Text color="gray"> ({percent}%)</Text>
+      )}
+      {status === "skipped" && (
+        <Text color="cyan"> (already downloaded)</Text>
       )}
       {status === "error" && progress?.error && (
         <Text color="red"> - {progress.error}</Text>
