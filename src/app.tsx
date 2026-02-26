@@ -9,9 +9,10 @@ interface AppProps {
   url?: string;
   outputDir: string;
   quality: string;
+  skipDuplicates?: boolean;
 }
 
-export function App({ url: initialUrl, outputDir, quality }: AppProps) {
+export function App({ url: initialUrl, outputDir, quality, skipDuplicates }: AppProps) {
   const { exit } = useApp();
 
   // ─────────────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ export function App({ url: initialUrl, outputDir, quality }: AppProps) {
     outputDir,
     format: "mp3",
     quality: quality as "128" | "192" | "256" | "320",
+    skipDuplicates,
   };
 
   // ─────────────────────────────────────────────────────────────
@@ -73,16 +75,27 @@ export function App({ url: initialUrl, outputDir, quality }: AppProps) {
       )}
 
       {/* State: All done */}
-      {state === "complete" && (
-        <Box flexDirection="column">
-          <DownloadList tracks={tracks} progress={progress} />
-          <Box marginTop={1}>
-            <Text color="green">
-              ✓ All downloads complete! Saved to {effectiveOutputDir}
-            </Text>
+      {state === "complete" && (() => {
+        const statuses = Array.from(progress.values());
+        const downloaded = statuses.filter(p => p.status === "complete").length;
+        const failed = statuses.filter(p => p.status === "error").length;
+        const skipped = statuses.filter(p => p.status === "skipped").length;
+
+        const parts = [`${downloaded} downloaded`];
+        if (failed > 0) parts.push(`${failed} failed`);
+        if (skipped > 0) parts.push(`${skipped} skipped`);
+
+        return (
+          <Box flexDirection="column">
+            <DownloadList tracks={tracks} progress={progress} />
+            <Box marginTop={1}>
+              <Text color="green">
+                ✓ {parts.join(", ")} — Saved to {effectiveOutputDir}
+              </Text>
+            </Box>
           </Box>
-        </Box>
-      )}
+        );
+      })()}
 
       {/* State: Error occurred */}
       {state === "error" && (

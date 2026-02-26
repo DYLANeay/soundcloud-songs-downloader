@@ -12,6 +12,7 @@ program
   .argument("[url]", "SoundCloud track or playlist URL")
   .option("-o, --output <dir>", "Output directory", "/home/dylan/Documents/songs")
   .option("-q, --quality <bitrate>", "Audio quality (128/192/256/320)", "320")
+  .option("-nd, --no-duplicates", "Skip tracks already downloaded in the output folder")
   .option("--no-tui", "Disable TUI, use simple output")
   .parse();
 
@@ -23,13 +24,14 @@ const config: AppConfig = {
   outputDir: options.output,
   format: "mp3",
   quality: options.quality as "128" | "192" | "256" | "320",
+  skipDuplicates: options.noDuplicates ?? false,
 };
 
 // Decide which mode to use:
-// 1. --no-tui flag explicitly set
-// 2. No TTY available (piped, CI, etc.)
-// 3. URL provided (can run non-interactively)
-const useCli = !options.tui || !process.stdin.isTTY;
+// 1. --no-tui flag explicitly set → CLI
+// 2. No TTY available (piped, CI, etc.) → CLI
+// 3. Everything else → TUI (even with a URL passed)
+const useCli = options.tui === false || !process.stdin.isTTY;
 
 if (useCli && url) {
   // CLI mode: simple console output
@@ -44,5 +46,5 @@ if (useCli && url) {
   process.exit(1);
 } else {
   // TUI mode: interactive Ink interface
-  render(<App url={url} outputDir={options.output} quality={options.quality} />);
+  render(<App url={url} outputDir={options.output} quality={options.quality} skipDuplicates={config.skipDuplicates} />);
 }
