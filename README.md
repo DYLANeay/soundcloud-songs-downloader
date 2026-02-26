@@ -1,51 +1,133 @@
-# SoundCloud Songs Downloader
+# scdown
 
 Download SoundCloud tracks and playlists to MP3.
 
-## Requirements
+A terminal app with an interactive TUI (built with [Ink](https://github.com/vadimdemedes/ink)) or a simple CLI mode for scripts and automation.
 
-- Node.js 20+
-- ffmpeg
+## Prerequisites
 
-Install ffmpeg:
+- [Node.js](https://nodejs.org/) >= 20
+- [ffmpeg](https://ffmpeg.org/) installed and available in your PATH
+
 ```bash
 # macOS
 brew install ffmpeg
 
 # Ubuntu/Debian
 sudo apt install ffmpeg
+
+# Arch
+sudo pacman -S ffmpeg
+```
+
+## Install
+
+```bash
+git clone https://github.com/DYLANeay/soundcloud-songs-downloader.git
+cd soundcloud-songs-downloader
+npm install
+npm run build
 ```
 
 ## Usage
 
 ```bash
-git clone <repo-url>
-cd soundcloud-songs-downloader
-npm install
-npx tsx src/index.tsx [url]
+# Download a single track
+npm start -- "https://soundcloud.com/artist/track-name"
+
+# Download an entire playlist
+npm start -- "https://soundcloud.com/artist/sets/playlist-name"
+
+# Download a user's tracks
+npm start -- "https://soundcloud.com/artist"
+
+# Shortened URLs work too
+npm start -- "https://on.soundcloud.com/abc123"
+
+# Interactive mode (TUI) — launches a URL prompt
+npm start
 ```
 
-### Examples
+### Interactive mode (TUI)
 
-Interactive mode (TUI):
+Run without a URL to get an interactive terminal interface:
+
 ```bash
-npx tsx src/index.tsx
+npm start
 ```
 
-Download a track:
-```bash
-npx tsx src/index.tsx https://soundcloud.com/artist/track
+```
+ 🎵 SoundCloud Downloader
+
+ Enter SoundCloud URL: https://soundcloud.com/artist/track
 ```
 
-Download a playlist:
-```bash
-npx tsx src/index.tsx https://soundcloud.com/artist/sets/playlist
+Paste a URL and press Enter. The TUI shows real-time download progress for each track:
+
 ```
+ 🎵 SoundCloud Downloader
+
+ ↓ Artist - Track One (42%)
+ ⟳ Artist - Track Two
+ ○ Artist - Track Three
+ ✓ Artist - Track Four
+ ⊘ Artist - Track Five (already downloaded)
+```
+
+| Symbol | Meaning |
+|--------|---------|
+| `○` | Pending |
+| `↓` | Downloading (with %) |
+| `⟳` | Converting to MP3 |
+| `✓` | Complete |
+| `✗` | Error |
+| `⊘` | Skipped (already exists) |
+
+On error, the URL prompt reappears so you can try again. On completion, the app exits automatically after showing the save location.
 
 ### Options
 
 ```
--o, --output <dir>      Output directory (default: ~/Documents/songs)
--q, --quality <bitrate> Audio quality: 128/192/256/320 (default: 320)
---no-tui                Disable interactive mode
+-o, --output <dir>       Output directory (default: ~/Documents/songs)
+-q, --quality <bitrate>  Audio quality: 128, 192, 256, 320 (default: 320)
+-nd, --no-duplicates     Skip tracks that are already downloaded
+--no-tui                 Disable interactive TUI, use plain text output
 ```
+
+### Examples
+
+```bash
+# Download to a specific folder at 256kbps
+npm start -- "https://soundcloud.com/artist/track" -o ~/Music -q 256
+
+# Download a playlist, skip already-downloaded tracks
+npm start -- "https://soundcloud.com/artist/sets/playlist" -nd
+
+# Non-interactive mode (for scripts/cron)
+npm start -- "https://soundcloud.com/artist/track" --no-tui
+```
+
+## Development
+
+```bash
+# Run directly without building (hot reload)
+npm run dev -- "https://soundcloud.com/artist/track"
+
+# Type check + lint + tests
+npm run check
+
+# Run tests
+npm test
+```
+
+## How it works
+
+1. Scrapes a client ID from SoundCloud's JavaScript bundles (no API key needed)
+2. Resolves the URL via SoundCloud's API to get track metadata and stream URLs
+3. Downloads the audio stream (prefers progressive over HLS)
+4. Converts to MP3 using ffmpeg
+5. Saves to the output directory (playlists get their own subfolder)
+
+## License
+
+MIT
