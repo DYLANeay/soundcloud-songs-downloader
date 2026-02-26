@@ -8,6 +8,7 @@
     "scdown": "dist/index.js"
   },
   "scripts": {
+    "launch": "tsx src/index.tsx",
     "dev": "tsx watch src/index.tsx",
     "build": "tsc",
     "start": "node dist/index.js",
